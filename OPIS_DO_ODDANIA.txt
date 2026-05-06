@@ -1,0 +1,24 @@
+OPIS PROJEKTU DO ODDANIA
+
+Nazwa domeny:
+System biblioteczny
+
+Opis projektu:
+Projekt został wykonany w technologii ASP.NET Core Web API jako aplikacja backendowa dla systemu bibliotecznego.
+Projekt obejmuje pełną realizację etapów 1, 2 i 3.
+
+Etap 1:
+Zaimplementowano modele domenowe Book, Reader oraz Loan, które reprezentują odpowiednio książkę, czytelnika i wypożyczenie.
+Dodano DTO oraz podstawowe endpointy REST typu GET, GET po identyfikatorze oraz POST.
+Na tym etapie została zdefiniowana relacja logiczna pomiędzy encją główną i użytkownikiem systemu.
+
+Etap 2:
+Kod został zrefaktoryzowany do warstwy usług (Services), a kontrolery odpowiadają wyłącznie za obsługę żądań HTTP.
+Zastosowano Dependency Injection, walidację danych wejściowych przy użyciu Data Annotations, endpointy PUT i DELETE oraz globalne obsługiwanie błędów przy pomocy middleware.
+W systemie zaimplementowano reguły biznesowe związane z wypożyczeniami.
+
+Etap 3:
+Dane zostały przeniesione z pamięci aplikacji do SQLite przy pomocy Entity Framework Core.
+Dodano paginację wyników oraz soft delete dla książek i czytelników.
+Swagger został rozszerzony o opisy XML, a do projektu dołączono instrukcję uruchomienia w pliku README.
+Dodatkowo utworzono prosty i przejrzysty widok strony startowej w języku polskim, prezentujący dane z systemu.

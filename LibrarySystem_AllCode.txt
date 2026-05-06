@@ -1,0 +1,1276 @@
+
+==========================================================================================
+PLIK: Program.cs
+==========================================================================================
+
+using System.Reflection;
+using LibrarySystem.Data;
+using LibrarySystem.Extensions;
+using LibrarySystem.Middleware;
+using LibrarySystem.Services.Implementations;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGenWithXml(Assembly.GetExecutingAssembly());
+builder.Services.AddDbContext<LibraryDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddScoped<IBookService, BookService>();
+builder.Services.AddScoped<IReaderService, ReaderService>();
+builder.Services.AddScoped<ILoanService, LoanService>();
+
+var app = builder.Build();
+app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.DocumentTitle = "System biblioteczny API";
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "System biblioteczny API v1");
+});
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseHttpsRedirection();
+app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
+    db.Database.EnsureCreated();
+    DbSeeder.Seed(db);
+}
+
+app.Run();
+
+
+==========================================================================================
+PLIK: LibrarySystem.csproj
+==========================================================================================
+
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.8" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.8">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+</Project>
+
+
+==========================================================================================
+PLIK: Models/Book.cs
+==========================================================================================
+
+namespace LibrarySystem.Models
+{
+    public class Book
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Author { get; set; } = string.Empty;
+        public string Isbn { get; set; } = string.Empty;
+        public int PublicationYear { get; set; }
+        public int AvailableCopies { get; set; }
+        public bool IsDeleted { get; set; }
+        public List<Loan> Loans { get; set; } = new();
+    }
+}
+
+
+==========================================================================================
+PLIK: Models/Reader.cs
+==========================================================================================
+
+namespace LibrarySystem.Models
+{
+    public class Reader
+    {
+        public int Id { get; set; }
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string LibraryCardNumber { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public bool IsDeleted { get; set; }
+        public List<Loan> Loans { get; set; } = new();
+    }
+}
+
+
+==========================================================================================
+PLIK: Models/Loan.cs
+==========================================================================================
+
+namespace LibrarySystem.Models
+{
+    public class Loan
+    {
+        public int Id { get; set; }
+        public int BookId { get; set; }
+        public Book? Book { get; set; }
+        public int ReaderId { get; set; }
+        public Reader? Reader { get; set; }
+        public DateTime LoanDate { get; set; }
+        public bool IsReturned { get; set; }
+        public DateTime? ReturnDate { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: Data/LibraryDbContext.cs
+==========================================================================================
+
+using LibrarySystem.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace LibrarySystem.Data
+{
+    public class LibraryDbContext : DbContext
+    {
+        public LibraryDbContext(DbContextOptions<LibraryDbContext> options) : base(options) { }
+        public DbSet<Book> Books => Set<Book>();
+        public DbSet<Reader> Readers => Set<Reader>();
+        public DbSet<Loan> Loans => Set<Loan>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<Book>().HasIndex(x => x.Isbn).IsUnique();
+            modelBuilder.Entity<Reader>().HasIndex(x => x.LibraryCardNumber).IsUnique();
+
+            modelBuilder.Entity<Loan>()
+                .HasOne(x => x.Book).WithMany(x => x.Loans)
+                .HasForeignKey(x => x.BookId).OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Loan>()
+                .HasOne(x => x.Reader).WithMany(x => x.Loans)
+                .HasForeignKey(x => x.ReaderId).OnDelete(DeleteBehavior.Restrict);
+        }
+    }
+}
+
+
+==========================================================================================
+PLIK: Data/DbSeeder.cs
+==========================================================================================
+
+using LibrarySystem.Models;
+
+namespace LibrarySystem.Data
+{
+    public static class DbSeeder
+    {
+        public static void Seed(LibraryDbContext db)
+        {
+            if (!db.Books.Any())
+            {
+                db.Books.AddRange(
+                    new Book { Title = "Pan Tadeusz", Author = "Adam Mickiewicz", Isbn = "9788305134346", PublicationYear = 1834, AvailableCopies = 3 },
+                    new Book { Title = "Lalka", Author = "Bolesław Prus", Isbn = "9788373271899", PublicationYear = 1890, AvailableCopies = 2 },
+                    new Book { Title = "Quo Vadis", Author = "Henryk Sienkiewicz", Isbn = "9788306031187", PublicationYear = 1896, AvailableCopies = 1 }
+                );
+            }
+            if (!db.Readers.Any())
+            {
+                db.Readers.AddRange(
+                    new Reader { FirstName = "Jan", LastName = "Kowalski", LibraryCardNumber = "BK1001", Email = "jan.kowalski@example.com" },
+                    new Reader { FirstName = "Anna", LastName = "Nowak", LibraryCardNumber = "BK1002", Email = "anna.nowak@example.com" }
+                );
+            }
+            db.SaveChanges();
+        }
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/PagedResultDto.cs
+==========================================================================================
+
+namespace LibrarySystem.DTOs
+{
+    public class PagedResultDto<T>
+    {
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public int TotalItems { get; set; }
+        public List<T> Items { get; set; } = new();
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Books/BookDto.cs
+==========================================================================================
+
+namespace LibrarySystem.DTOs.Books
+{
+    public class BookDto
+    {
+        public int Id { get; set; }
+        public string Tytul { get; set; } = string.Empty;
+        public string Autor { get; set; } = string.Empty;
+        public string Isbn { get; set; } = string.Empty;
+        public int RokWydania { get; set; }
+        public int DostepneEgzemplarze { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Books/CreateBookDto.cs
+==========================================================================================
+
+using System.ComponentModel.DataAnnotations;
+namespace LibrarySystem.DTOs.Books
+{
+    public class CreateBookDto
+    {
+        [Required(ErrorMessage = "Tytuł jest wymagany.")]
+        [StringLength(120, ErrorMessage = "Tytuł może mieć maksymalnie 120 znaków.")]
+        public string Title { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Autor jest wymagany.")]
+        [StringLength(100, ErrorMessage = "Autor może mieć maksymalnie 100 znaków.")]
+        public string Author { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "ISBN jest wymagany.")]
+        [StringLength(20, ErrorMessage = "ISBN może mieć maksymalnie 20 znaków.")]
+        public string Isbn { get; set; } = string.Empty;
+
+        [Range(1450, 2100, ErrorMessage = "Rok wydania jest niepoprawny.")]
+        public int PublicationYear { get; set; }
+
+        [Range(0, 100, ErrorMessage = "Liczba egzemplarzy musi być z zakresu 0-100.")]
+        public int AvailableCopies { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Books/UpdateBookDto.cs
+==========================================================================================
+
+using System.ComponentModel.DataAnnotations;
+namespace LibrarySystem.DTOs.Books
+{
+    public class UpdateBookDto
+    {
+        [Required(ErrorMessage = "Tytuł jest wymagany.")]
+        [StringLength(120, ErrorMessage = "Tytuł może mieć maksymalnie 120 znaków.")]
+        public string Title { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Autor jest wymagany.")]
+        [StringLength(100, ErrorMessage = "Autor może mieć maksymalnie 100 znaków.")]
+        public string Author { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "ISBN jest wymagany.")]
+        [StringLength(20, ErrorMessage = "ISBN może mieć maksymalnie 20 znaków.")]
+        public string Isbn { get; set; } = string.Empty;
+
+        [Range(1450, 2100, ErrorMessage = "Rok wydania jest niepoprawny.")]
+        public int PublicationYear { get; set; }
+
+        [Range(0, 100, ErrorMessage = "Liczba egzemplarzy musi być z zakresu 0-100.")]
+        public int AvailableCopies { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Readers/ReaderDto.cs
+==========================================================================================
+
+namespace LibrarySystem.DTOs.Readers
+{
+    public class ReaderDto
+    {
+        public int Id { get; set; }
+        public string ImieNazwisko { get; set; } = string.Empty;
+        public string NumerKarty { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Readers/CreateReaderDto.cs
+==========================================================================================
+
+using System.ComponentModel.DataAnnotations;
+namespace LibrarySystem.DTOs.Readers
+{
+    public class CreateReaderDto
+    {
+        [Required(ErrorMessage = "Imię jest wymagane.")]
+        [StringLength(50, ErrorMessage = "Imię może mieć maksymalnie 50 znaków.")]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Nazwisko jest wymagane.")]
+        [StringLength(50, ErrorMessage = "Nazwisko może mieć maksymalnie 50 znaków.")]
+        public string LastName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Numer karty jest wymagany.")]
+        [StringLength(30, ErrorMessage = "Numer karty może mieć maksymalnie 30 znaków.")]
+        public string LibraryCardNumber { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email jest wymagany.")]
+        [EmailAddress(ErrorMessage = "Niepoprawny adres email.")]
+        public string Email { get; set; } = string.Empty;
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Readers/UpdateReaderDto.cs
+==========================================================================================
+
+using System.ComponentModel.DataAnnotations;
+namespace LibrarySystem.DTOs.Readers
+{
+    public class UpdateReaderDto
+    {
+        [Required(ErrorMessage = "Imię jest wymagane.")]
+        [StringLength(50, ErrorMessage = "Imię może mieć maksymalnie 50 znaków.")]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Nazwisko jest wymagane.")]
+        [StringLength(50, ErrorMessage = "Nazwisko może mieć maksymalnie 50 znaków.")]
+        public string LastName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Numer karty jest wymagany.")]
+        [StringLength(30, ErrorMessage = "Numer karty może mieć maksymalnie 30 znaków.")]
+        public string LibraryCardNumber { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email jest wymagany.")]
+        [EmailAddress(ErrorMessage = "Niepoprawny adres email.")]
+        public string Email { get; set; } = string.Empty;
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Loans/LoanDto.cs
+==========================================================================================
+
+namespace LibrarySystem.DTOs.Loans
+{
+    public class LoanDto
+    {
+        public int Id { get; set; }
+        public int BookId { get; set; }
+        public string TytulKsiazki { get; set; } = string.Empty;
+        public int ReaderId { get; set; }
+        public string Czytelnik { get; set; } = string.Empty;
+        public DateTime DataWypozyczenia { get; set; }
+        public bool CzyZwrocono { get; set; }
+        public DateTime? DataZwrotu { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Loans/CreateLoanDto.cs
+==========================================================================================
+
+using System.ComponentModel.DataAnnotations;
+namespace LibrarySystem.DTOs.Loans
+{
+    public class CreateLoanDto
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "BookId musi być większe od 0.")]
+        public int BookId { get; set; }
+        [Range(1, int.MaxValue, ErrorMessage = "ReaderId musi być większe od 0.")]
+        public int ReaderId { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: DTOs/Loans/ReturnLoanDto.cs
+==========================================================================================
+
+using System.ComponentModel.DataAnnotations;
+namespace LibrarySystem.DTOs.Loans
+{
+    public class ReturnLoanDto
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Id wypożyczenia musi być większe od 0.")]
+        public int LoanId { get; set; }
+    }
+}
+
+
+==========================================================================================
+PLIK: Exceptions/NotFoundException.cs
+==========================================================================================
+
+namespace LibrarySystem.Exceptions
+{
+    public class NotFoundException : Exception
+    {
+        public NotFoundException(string message) : base(message) { }
+    }
+}
+
+
+==========================================================================================
+PLIK: Exceptions/BusinessRuleException.cs
+==========================================================================================
+
+namespace LibrarySystem.Exceptions
+{
+    public class BusinessRuleException : Exception
+    {
+        public BusinessRuleException(string message) : base(message) { }
+    }
+}
+
+
+==========================================================================================
+PLIK: Middleware/ErrorHandlingMiddleware.cs
+==========================================================================================
+
+using System.Net;
+using System.Text.Json;
+using LibrarySystem.Exceptions;
+
+namespace LibrarySystem.Middleware
+{
+    public class ErrorHandlingMiddleware
+    {
+        private readonly RequestDelegate _next;
+        public ErrorHandlingMiddleware(RequestDelegate next) { _next = next; }
+
+        public async Task Invoke(HttpContext context)
+        {
+            try { await _next(context); }
+            catch (NotFoundException ex) { await WriteError(context, HttpStatusCode.NotFound, ex.Message); }
+            catch (BusinessRuleException ex) { await WriteError(context, HttpStatusCode.BadRequest, ex.Message); }
+            catch (Exception ex) { await WriteError(context, HttpStatusCode.InternalServerError, $"Wystąpił nieoczekiwany błąd: {ex.Message}"); }
+        }
+
+        private static async Task WriteError(HttpContext context, HttpStatusCode statusCode, string message)
+        {
+            context.Response.ContentType = "application/json; charset=utf-8";
+            context.Response.StatusCode = (int)statusCode;
+            var payload = JsonSerializer.Serialize(new { status = (int)statusCode, message });
+            await context.Response.WriteAsync(payload);
+        }
+    }
+}
+
+
+==========================================================================================
+PLIK: Services/Interfaces/IBookService.cs
+==========================================================================================
+
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Books;
+namespace LibrarySystem.Services.Interfaces
+{
+    public interface IBookService
+    {
+        Task<PagedResultDto<BookDto>> GetAllAsync(int page, int pageSize, string? search);
+        Task<BookDto> GetByIdAsync(int id);
+        Task<BookDto> CreateAsync(CreateBookDto dto);
+        Task<BookDto> UpdateAsync(int id, UpdateBookDto dto);
+        Task DeleteAsync(int id);
+    }
+}
+
+
+==========================================================================================
+PLIK: Services/Interfaces/IReaderService.cs
+==========================================================================================
+
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Readers;
+namespace LibrarySystem.Services.Interfaces
+{
+    public interface IReaderService
+    {
+        Task<PagedResultDto<ReaderDto>> GetAllAsync(int page, int pageSize, string? search);
+        Task<ReaderDto> GetByIdAsync(int id);
+        Task<ReaderDto> CreateAsync(CreateReaderDto dto);
+        Task<ReaderDto> UpdateAsync(int id, UpdateReaderDto dto);
+        Task DeleteAsync(int id);
+    }
+}
+
+
+==========================================================================================
+PLIK: Services/Interfaces/ILoanService.cs
+==========================================================================================
+
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Loans;
+namespace LibrarySystem.Services.Interfaces
+{
+    public interface ILoanService
+    {
+        Task<PagedResultDto<LoanDto>> GetAllAsync(int page, int pageSize);
+        Task<LoanDto> GetByIdAsync(int id);
+        Task<LoanDto> CreateAsync(CreateLoanDto dto);
+        Task<LoanDto> ReturnAsync(int id);
+        Task DeleteAsync(int id);
+    }
+}
+
+
+==========================================================================================
+PLIK: Services/Implementations/BookService.cs
+==========================================================================================
+
+using LibrarySystem.Data;
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Books;
+using LibrarySystem.Exceptions;
+using LibrarySystem.Models;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
+
+namespace LibrarySystem.Services.Implementations
+{
+    public class BookService : IBookService
+    {
+        private readonly LibraryDbContext _db;
+        public BookService(LibraryDbContext db) { _db = db; }
+
+        public async Task<PagedResultDto<BookDto>> GetAllAsync(int page, int pageSize, string? search)
+        {
+            var query = _db.Books.Where(x => !x.IsDeleted).AsQueryable();
+            if (!string.IsNullOrWhiteSpace(search))
+                query = query.Where(x => x.Title.Contains(search) || x.Author.Contains(search));
+
+            var totalItems = await query.CountAsync();
+            var items = await query.OrderBy(x => x.Title).Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(x => new BookDto
+                {
+                    Id = x.Id,
+                    Tytul = x.Title,
+                    Autor = x.Author,
+                    Isbn = x.Isbn,
+                    RokWydania = x.PublicationYear,
+                    DostepneEgzemplarze = x.AvailableCopies
+                }).ToListAsync();
+
+            return new PagedResultDto<BookDto> { Page = page, PageSize = pageSize, TotalItems = totalItems, Items = items };
+        }
+
+        public async Task<BookDto> GetByIdAsync(int id)
+        {
+            var book = await _db.Books.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted)
+                ?? throw new NotFoundException($"Nie znaleziono książki o Id = {id}.");
+            return Map(book);
+        }
+
+        public async Task<BookDto> CreateAsync(CreateBookDto dto)
+        {
+            if (await _db.Books.AnyAsync(x => x.Isbn == dto.Isbn && !x.IsDeleted))
+                throw new BusinessRuleException("Książka o podanym ISBN już istnieje.");
+
+            var book = new Book
+            {
+                Title = dto.Title,
+                Author = dto.Author,
+                Isbn = dto.Isbn,
+                PublicationYear = dto.PublicationYear,
+                AvailableCopies = dto.AvailableCopies
+            };
+            _db.Books.Add(book);
+            await _db.SaveChangesAsync();
+            return Map(book);
+        }
+
+        public async Task<BookDto> UpdateAsync(int id, UpdateBookDto dto)
+        {
+            var book = await _db.Books.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted)
+                ?? throw new NotFoundException($"Nie znaleziono książki o Id = {id}.");
+
+            if (await _db.Books.AnyAsync(x => x.Id != id && x.Isbn == dto.Isbn && !x.IsDeleted))
+                throw new BusinessRuleException("Inna książka z takim ISBN już istnieje.");
+
+            book.Title = dto.Title;
+            book.Author = dto.Author;
+            book.Isbn = dto.Isbn;
+            book.PublicationYear = dto.PublicationYear;
+            book.AvailableCopies = dto.AvailableCopies;
+            await _db.SaveChangesAsync();
+            return Map(book);
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var book = await _db.Books.Include(x => x.Loans).FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted)
+                ?? throw new NotFoundException($"Nie znaleziono książki o Id = {id}.");
+
+            if (book.Loans.Any(x => !x.IsReturned))
+                throw new BusinessRuleException("Nie można usunąć książki, która ma aktywne wypożyczenia.");
+
+            book.IsDeleted = true;
+            await _db.SaveChangesAsync();
+        }
+
+        private static BookDto Map(Book book) => new()
+        {
+            Id = book.Id,
+            Tytul = book.Title,
+            Autor = book.Author,
+            Isbn = book.Isbn,
+            RokWydania = book.PublicationYear,
+            DostepneEgzemplarze = book.AvailableCopies
+        };
+    }
+}
+
+
+==========================================================================================
+PLIK: Services/Implementations/ReaderService.cs
+==========================================================================================
+
+using LibrarySystem.Data;
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Readers;
+using LibrarySystem.Exceptions;
+using LibrarySystem.Models;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
+
+namespace LibrarySystem.Services.Implementations
+{
+    public class ReaderService : IReaderService
+    {
+        private readonly LibraryDbContext _db;
+        public ReaderService(LibraryDbContext db) { _db = db; }
+
+        public async Task<PagedResultDto<ReaderDto>> GetAllAsync(int page, int pageSize, string? search)
+        {
+            var query = _db.Readers.Where(x => !x.IsDeleted).AsQueryable();
+            if (!string.IsNullOrWhiteSpace(search))
+                query = query.Where(x => x.FirstName.Contains(search) || x.LastName.Contains(search) || x.LibraryCardNumber.Contains(search));
+
+            var totalItems = await query.CountAsync();
+            var items = await query.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(x => new ReaderDto
+                {
+                    Id = x.Id,
+                    ImieNazwisko = x.FirstName + " " + x.LastName,
+                    NumerKarty = x.LibraryCardNumber,
+                    Email = x.Email
+                }).ToListAsync();
+
+            return new PagedResultDto<ReaderDto> { Page = page, PageSize = pageSize, TotalItems = totalItems, Items = items };
+        }
+
+        public async Task<ReaderDto> GetByIdAsync(int id)
+        {
+            var reader = await _db.Readers.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted)
+                ?? throw new NotFoundException($"Nie znaleziono czytelnika o Id = {id}.");
+            return Map(reader);
+        }
+
+        public async Task<ReaderDto> CreateAsync(CreateReaderDto dto)
+        {
+            if (await _db.Readers.AnyAsync(x => x.LibraryCardNumber == dto.LibraryCardNumber && !x.IsDeleted))
+                throw new BusinessRuleException("Czytelnik z takim numerem karty już istnieje.");
+            if (await _db.Readers.AnyAsync(x => x.Email == dto.Email && !x.IsDeleted))
+                throw new BusinessRuleException("Czytelnik z takim adresem email już istnieje.");
+
+            var reader = new Reader
+            {
+                FirstName = dto.FirstName, LastName = dto.LastName,
+                LibraryCardNumber = dto.LibraryCardNumber, Email = dto.Email
+            };
+            _db.Readers.Add(reader);
+            await _db.SaveChangesAsync();
+            return Map(reader);
+        }
+
+        public async Task<ReaderDto> UpdateAsync(int id, UpdateReaderDto dto)
+        {
+            var reader = await _db.Readers.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted)
+                ?? throw new NotFoundException($"Nie znaleziono czytelnika o Id = {id}.");
+
+            if (await _db.Readers.AnyAsync(x => x.Id != id && x.LibraryCardNumber == dto.LibraryCardNumber && !x.IsDeleted))
+                throw new BusinessRuleException("Inny czytelnik z takim numerem karty już istnieje.");
+            if (await _db.Readers.AnyAsync(x => x.Id != id && x.Email == dto.Email && !x.IsDeleted))
+                throw new BusinessRuleException("Inny czytelnik z takim adresem email już istnieje.");
+
+            reader.FirstName = dto.FirstName;
+            reader.LastName = dto.LastName;
+            reader.LibraryCardNumber = dto.LibraryCardNumber;
+            reader.Email = dto.Email;
+            await _db.SaveChangesAsync();
+            return Map(reader);
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var reader = await _db.Readers.Include(x => x.Loans).FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted)
+                ?? throw new NotFoundException($"Nie znaleziono czytelnika o Id = {id}.");
+
+            if (reader.Loans.Any(x => !x.IsReturned))
+                throw new BusinessRuleException("Nie można usunąć czytelnika, który ma aktywne wypożyczenia.");
+
+            reader.IsDeleted = true;
+            await _db.SaveChangesAsync();
+        }
+
+        private static ReaderDto Map(Reader reader) => new()
+        {
+            Id = reader.Id,
+            ImieNazwisko = $"{reader.FirstName} {reader.LastName}",
+            NumerKarty = reader.LibraryCardNumber,
+            Email = reader.Email
+        };
+    }
+}
+
+
+==========================================================================================
+PLIK: Services/Implementations/LoanService.cs
+==========================================================================================
+
+using LibrarySystem.Data;
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Loans;
+using LibrarySystem.Exceptions;
+using LibrarySystem.Models;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
+
+namespace LibrarySystem.Services.Implementations
+{
+    public class LoanService : ILoanService
+    {
+        private readonly LibraryDbContext _db;
+        private const int MaxLoansPerReader = 3;
+        public LoanService(LibraryDbContext db) { _db = db; }
+
+        public async Task<PagedResultDto<LoanDto>> GetAllAsync(int page, int pageSize)
+        {
+            var query = _db.Loans.Include(x => x.Book).Include(x => x.Reader).AsQueryable();
+            var totalItems = await query.CountAsync();
+            var items = await query.OrderByDescending(x => x.LoanDate).Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(x => new LoanDto
+                {
+                    Id = x.Id,
+                    BookId = x.BookId,
+                    TytulKsiazki = x.Book!.Title,
+                    ReaderId = x.ReaderId,
+                    Czytelnik = x.Reader!.FirstName + " " + x.Reader.LastName,
+                    DataWypozyczenia = x.LoanDate,
+                    CzyZwrocono = x.IsReturned,
+                    DataZwrotu = x.ReturnDate
+                }).ToListAsync();
+
+            return new PagedResultDto<LoanDto> { Page = page, PageSize = pageSize, TotalItems = totalItems, Items = items };
+        }
+
+        public async Task<LoanDto> GetByIdAsync(int id)
+        {
+            var loan = await _db.Loans.Include(x => x.Book).Include(x => x.Reader).FirstOrDefaultAsync(x => x.Id == id)
+                ?? throw new NotFoundException($"Nie znaleziono wypożyczenia o Id = {id}.");
+            return Map(loan);
+        }
+
+        public async Task<LoanDto> CreateAsync(CreateLoanDto dto)
+        {
+            var book = await _db.Books.FirstOrDefaultAsync(x => x.Id == dto.BookId && !x.IsDeleted)
+                ?? throw new NotFoundException("Podana książka nie istnieje.");
+            var reader = await _db.Readers.FirstOrDefaultAsync(x => x.Id == dto.ReaderId && !x.IsDeleted)
+                ?? throw new NotFoundException("Podany czytelnik nie istnieje.");
+
+            if (book.AvailableCopies <= 0)
+                throw new BusinessRuleException("Brak dostępnych egzemplarzy tej książki.");
+
+            var activeLoans = await _db.Loans.CountAsync(x => x.ReaderId == dto.ReaderId && !x.IsReturned);
+            if (activeLoans >= MaxLoansPerReader)
+                throw new BusinessRuleException("Czytelnik osiągnął limit 3 aktywnych wypożyczeń.");
+
+            var duplicate = await _db.Loans.AnyAsync(x => x.ReaderId == dto.ReaderId && x.BookId == dto.BookId && !x.IsReturned);
+            if (duplicate)
+                throw new BusinessRuleException("Czytelnik ma już wypożyczony ten tytuł.");
+
+            var loan = new Loan { BookId = dto.BookId, ReaderId = dto.ReaderId, LoanDate = DateTime.Now, IsReturned = false };
+            book.AvailableCopies--;
+            _db.Loans.Add(loan);
+            await _db.SaveChangesAsync();
+            loan.Book = book; loan.Reader = reader;
+            return Map(loan);
+        }
+
+        public async Task<LoanDto> ReturnAsync(int id)
+        {
+            var loan = await _db.Loans.Include(x => x.Book).Include(x => x.Reader).FirstOrDefaultAsync(x => x.Id == id)
+                ?? throw new NotFoundException($"Nie znaleziono wypożyczenia o Id = {id}.");
+
+            if (loan.IsReturned)
+                throw new BusinessRuleException("To wypożyczenie zostało już zwrócone.");
+
+            loan.IsReturned = true;
+            loan.ReturnDate = DateTime.Now;
+            if (loan.Book is not null) loan.Book.AvailableCopies++;
+            await _db.SaveChangesAsync();
+            return Map(loan);
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var loan = await _db.Loans.FirstOrDefaultAsync(x => x.Id == id)
+                ?? throw new NotFoundException($"Nie znaleziono wypożyczenia o Id = {id}.");
+
+            if (!loan.IsReturned)
+                throw new BusinessRuleException("Nie można usunąć aktywnego wypożyczenia. Najpierw je zwróć.");
+
+            _db.Loans.Remove(loan);
+            await _db.SaveChangesAsync();
+        }
+
+        private static LoanDto Map(Loan loan) => new()
+        {
+            Id = loan.Id,
+            BookId = loan.BookId,
+            TytulKsiazki = loan.Book?.Title ?? string.Empty,
+            ReaderId = loan.ReaderId,
+            Czytelnik = loan.Reader != null ? $"{loan.Reader.FirstName} {loan.Reader.LastName}" : string.Empty,
+            DataWypozyczenia = loan.LoanDate,
+            CzyZwrocono = loan.IsReturned,
+            DataZwrotu = loan.ReturnDate
+        };
+    }
+}
+
+
+==========================================================================================
+PLIK: Extensions/SwaggerExtensions.cs
+==========================================================================================
+
+using System.Reflection;
+using Microsoft.OpenApi.Models;
+
+namespace LibrarySystem.Extensions
+{
+    public static class SwaggerExtensions
+    {
+        public static IServiceCollection AddSwaggerGenWithXml(this IServiceCollection services, Assembly assembly)
+        {
+            services.AddSwaggerGen(options =>
+            {
+                options.SwaggerDoc("v1", new OpenApiInfo
+                {
+                    Title = "System biblioteczny API",
+                    Version = "v1",
+                    Description = "Backend ASP.NET Core Web API dla systemu bibliotecznego. Projekt finalny obejmuje etapy 1, 2 i 3."
+                });
+
+                var xmlFile = $"{assembly.GetName().Name}.xml";
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                if (File.Exists(xmlPath)) options.IncludeXmlComments(xmlPath);
+            });
+
+            return services;
+        }
+    }
+}
+
+
+==========================================================================================
+PLIK: Controllers/BooksController.cs
+==========================================================================================
+
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Books;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace LibrarySystem.Controllers
+{
+    /// <summary>Kontroler do zarządzania książkami.</summary>
+    [ApiController]
+    [Route("api/[controller]")]
+    public class BooksController : ControllerBase
+    {
+        private readonly IBookService _bookService;
+        public BooksController(IBookService bookService) { _bookService = bookService; }
+
+        /// <summary>Pobiera listę książek z paginacją i opcjonalnym wyszukiwaniem.</summary>
+        [HttpGet]
+        public async Task<ActionResult<PagedResultDto<BookDto>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+            => Ok(await _bookService.GetAllAsync(page, pageSize, search));
+
+        /// <summary>Pobiera jedną książkę po identyfikatorze.</summary>
+        [HttpGet("{id}")]
+        public async Task<ActionResult<BookDto>> GetById(int id) => Ok(await _bookService.GetByIdAsync(id));
+
+        /// <summary>Dodaje nową książkę.</summary>
+        [HttpPost]
+        public async Task<ActionResult<BookDto>> Create([FromBody] CreateBookDto dto)
+        {
+            var created = await _bookService.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+
+        /// <summary>Aktualizuje dane książki.</summary>
+        [HttpPut("{id}")]
+        public async Task<ActionResult<BookDto>> Update(int id, [FromBody] UpdateBookDto dto) => Ok(await _bookService.UpdateAsync(id, dto));
+
+        /// <summary>Usuwa książkę logicznie (soft delete).</summary>
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id) { await _bookService.DeleteAsync(id); return NoContent(); }
+    }
+}
+
+
+==========================================================================================
+PLIK: Controllers/ReadersController.cs
+==========================================================================================
+
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Readers;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace LibrarySystem.Controllers
+{
+    /// <summary>Kontroler do zarządzania czytelnikami.</summary>
+    [ApiController]
+    [Route("api/[controller]")]
+    public class ReadersController : ControllerBase
+    {
+        private readonly IReaderService _readerService;
+        public ReadersController(IReaderService readerService) { _readerService = readerService; }
+
+        /// <summary>Pobiera listę czytelników z paginacją i opcjonalnym wyszukiwaniem.</summary>
+        [HttpGet]
+        public async Task<ActionResult<PagedResultDto<ReaderDto>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+            => Ok(await _readerService.GetAllAsync(page, pageSize, search));
+
+        /// <summary>Pobiera jednego czytelnika po identyfikatorze.</summary>
+        [HttpGet("{id}")]
+        public async Task<ActionResult<ReaderDto>> GetById(int id) => Ok(await _readerService.GetByIdAsync(id));
+
+        /// <summary>Dodaje nowego czytelnika.</summary>
+        [HttpPost]
+        public async Task<ActionResult<ReaderDto>> Create([FromBody] CreateReaderDto dto)
+        {
+            var created = await _readerService.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+
+        /// <summary>Aktualizuje dane czytelnika.</summary>
+        [HttpPut("{id}")]
+        public async Task<ActionResult<ReaderDto>> Update(int id, [FromBody] UpdateReaderDto dto) => Ok(await _readerService.UpdateAsync(id, dto));
+
+        /// <summary>Usuwa czytelnika logicznie (soft delete).</summary>
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id) { await _readerService.DeleteAsync(id); return NoContent(); }
+    }
+}
+
+
+==========================================================================================
+PLIK: Controllers/LoansController.cs
+==========================================================================================
+
+using LibrarySystem.DTOs;
+using LibrarySystem.DTOs.Loans;
+using LibrarySystem.Services.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace LibrarySystem.Controllers
+{
+    /// <summary>Kontroler do zarządzania wypożyczeniami.</summary>
+    [ApiController]
+    [Route("api/[controller]")]
+    public class LoansController : ControllerBase
+    {
+        private readonly ILoanService _loanService;
+        public LoansController(ILoanService loanService) { _loanService = loanService; }
+
+        /// <summary>Pobiera listę wypożyczeń z paginacją.</summary>
+        [HttpGet]
+        public async Task<ActionResult<PagedResultDto<LoanDto>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+            => Ok(await _loanService.GetAllAsync(page, pageSize));
+
+        /// <summary>Pobiera jedno wypożyczenie po identyfikatorze.</summary>
+        [HttpGet("{id}")]
+        public async Task<ActionResult<LoanDto>> GetById(int id) => Ok(await _loanService.GetByIdAsync(id));
+
+        /// <summary>Tworzy nowe wypożyczenie.</summary>
+        [HttpPost]
+        public async Task<ActionResult<LoanDto>> Create([FromBody] CreateLoanDto dto)
+        {
+            var created = await _loanService.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+
+        /// <summary>Zwraca wypożyczoną książkę.</summary>
+        [HttpPut("{id}/return")]
+        public async Task<ActionResult<LoanDto>> Return(int id) => Ok(await _loanService.ReturnAsync(id));
+
+        /// <summary>Usuwa wypożyczenie po zwrocie.</summary>
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id) { await _loanService.DeleteAsync(id); return NoContent(); }
+    }
+}
+
+
+==========================================================================================
+PLIK: wwwroot/index.html
+==========================================================================================
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>System biblioteczny</title>
+    <link rel="stylesheet" href="/css/site.css" />
+</head>
+<body>
+<header class="hero">
+    <div class="container">
+        <div>
+            <h1>System biblioteczny</h1>
+            <p>Projekt końcowy ASP.NET Core Web API — etapy 1, 2 i 3</p>
+        </div>
+        <div class="hero-actions">
+            <a class="button" href="/swagger" target="_blank">Otwórz Swagger</a>
+        </div>
+    </div>
+</header>
+
+<main class="container">
+    <section class="summary-grid">
+        <div class="card stat"><h2>Książki</h2><div id="booksCount" class="value">-</div></div>
+        <div class="card stat"><h2>Czytelnicy</h2><div id="readersCount" class="value">-</div></div>
+        <div class="card stat"><h2>Wypożyczenia</h2><div id="loansCount" class="value">-</div></div>
+    </section>
+
+    <section class="controls card">
+        <div class="filters">
+            <input id="searchInput" type="text" placeholder="Szukaj po tytule lub autorze..." />
+            <button id="searchButton" class="button">Szukaj</button>
+            <button id="resetButton" class="button secondary">Reset</button>
+        </div>
+    </section>
+
+    <section class="grid-two">
+        <section class="card">
+            <div class="section-header"><h2>Książki</h2><button id="refreshBooks" class="button small">Odśwież</button></div>
+            <table><thead><tr><th>ID</th><th>Tytuł</th><th>Autor</th><th>Dostępne</th></tr></thead><tbody id="booksTable"></tbody></table>
+        </section>
+
+        <section class="card">
+            <div class="section-header"><h2>Czytelnicy</h2><button id="refreshReaders" class="button small">Odśwież</button></div>
+            <table><thead><tr><th>ID</th><th>Imię i nazwisko</th><th>Karta</th></tr></thead><tbody id="readersTable"></tbody></table>
+        </section>
+    </section>
+
+    <section class="card">
+        <div class="section-header"><h2>Wypożyczenia</h2><button id="refreshLoans" class="button small">Odśwież</button></div>
+        <table><thead><tr><th>ID</th><th>Książka</th><th>Czytelnik</th><th>Data wypożyczenia</th><th>Status</th></tr></thead><tbody id="loansTable"></tbody></table>
+    </section>
+
+    <section class="card info">
+        <h2>Co zawiera projekt</h2>
+        <ul>
+            <li>Etap 1: modele, DTO, endpointy GET/POST, relacja Book-Reader-Loan.</li>
+            <li>Etap 2: Services, Dependency Injection, walidacja, PUT/DELETE, middleware błędów.</li>
+            <li>Etap 3: EF Core + SQLite, paginacja, soft delete, Swagger XML, README.</li>
+        </ul>
+    </section>
+</main>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
+
+
+==========================================================================================
+PLIK: wwwroot/css/site.css
+==========================================================================================
+
+:root {
+    --bg: #f4f7fb; --card: #ffffff; --text: #1e293b; --muted: #64748b; --primary: #0f766e;
+    --primary-dark: #115e59; --border: #dbe4ee; --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: var(--bg); color: var(--text); }
+.container { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+.hero { background: linear-gradient(135deg, #0f766e, #1d4ed8); color: white; padding: 32px 0; box-shadow: var(--shadow); }
+.hero .container { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.hero h1 { margin: 0 0 8px; font-size: 34px; }
+.hero p { margin: 0; opacity: 0.95; }
+main.container { padding: 24px 0 40px; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.grid-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); }
+.stat h2 { margin: 0 0 8px; color: var(--muted); font-size: 16px; }
+.value { font-size: 36px; font-weight: 700; color: var(--primary); }
+.section-header, .filters { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.filters input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 15px; }
+.button { border: none; background: var(--primary); color: white; padding: 11px 16px; border-radius: 12px; cursor: pointer; text-decoration: none; display: inline-block; font-weight: 600; }
+.button:hover { background: var(--primary-dark); }
+.button.secondary { background: #475569; }
+.button.small { padding: 8px 12px; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; }
+.status { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.status.active { background: #dcfce7; color: #166534; }
+.status.returned { background: #e0e7ff; color: #3730a3; }
+.info ul { margin: 8px 0 0 18px; padding: 0; }
+.empty { color: var(--muted); padding: 16px 0; }
+@media (max-width: 900px) {
+    .summary-grid, .grid-two { grid-template-columns: 1fr; }
+    .hero .container, .filters { flex-direction: column; align-items: stretch; }
+}
+
+
+==========================================================================================
+PLIK: wwwroot/js/app.js
+==========================================================================================
+
+async function fetchJson(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Błąd ${response.status}`);
+    return await response.json();
+}
+function fillTable(tbodyId, rowsHtml, emptyMessage) {
+    const tbody = document.getElementById(tbodyId);
+    if (!rowsHtml.length) {
+        tbody.innerHTML = `<tr><td colspan="10" class="empty">${emptyMessage}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rowsHtml.join('');
+}
+function formatDate(value) {
+    if (!value) return '-';
+    return new Date(value).toLocaleString('pl-PL');
+}
+async function loadBooks(search = '') {
+    const data = await fetchJson(`/api/books?page=1&pageSize=10&search=${encodeURIComponent(search)}`);
+    document.getElementById('booksCount').textContent = data.totalItems;
+    fillTable('booksTable', data.items.map(x => `
+        <tr><td>${x.id}</td><td>${x.tytul}</td><td>${x.autor}</td><td>${x.dostepneEgzemplarze}</td></tr>
+    `), 'Brak książek do wyświetlenia.');
+}
+async function loadReaders() {
+    const data = await fetchJson('/api/readers?page=1&pageSize=10');
+    document.getElementById('readersCount').textContent = data.totalItems;
+    fillTable('readersTable', data.items.map(x => `
+        <tr><td>${x.id}</td><td>${x.imieNazwisko}</td><td>${x.numerKarty}</td></tr>
+    `), 'Brak czytelników do wyświetlenia.');
+}
+async function loadLoans() {
+    const data = await fetchJson('/api/loans?page=1&pageSize=10');
+    document.getElementById('loansCount').textContent = data.totalItems;
+    fillTable('loansTable', data.items.map(x => `
+        <tr><td>${x.id}</td><td>${x.tytulKsiazki}</td><td>${x.czytelnik}</td><td>${formatDate(x.dataWypozyczenia)}</td><td><span class="status ${x.czyZwrocono ? 'returned' : 'active'}">${x.czyZwrocono ? 'Zwrócone' : 'Aktywne'}</span></td></tr>
+    `), 'Brak wypożyczeń do wyświetlenia.');
+}
+async function init() { try { await Promise.all([loadBooks(), loadReaders(), loadLoans()]); } catch (error) { console.error(error); } }
+document.getElementById('searchButton').addEventListener('click', () => loadBooks(document.getElementById('searchInput').value));
+document.getElementById('resetButton').addEventListener('click', () => { document.getElementById('searchInput').value = ''; loadBooks(); });
+document.getElementById('refreshBooks').addEventListener('click', () => loadBooks(document.getElementById('searchInput').value));
+document.getElementById('refreshReaders').addEventListener('click', loadReaders);
+document.getElementById('refreshLoans').addEventListener('click', loadLoans);
+init();
+
+
+==========================================================================================
+PLIK: README.txt
+==========================================================================================
+
+SYSTEM BIBLIOTECZNY - PROJEKT FINALNY (ETAPY 1, 2, 3)
+
+1. WYMAGANIA
+- .NET 8 SDK x64
+- Visual Studio 2022 lub VS Code z C# Dev Kit
+
+2. URUCHOMIENIE
+- Otwórz folder LibrarySystem
+- W terminalu wpisz:
+  dotnet restore
+  dotnet run
+
+3. ADRESY
+- Strona główna:
+  http://localhost:5091
+- Swagger:
+  http://localhost:5091/swagger
+
+4. ZAWARTOŚĆ ETAPÓW
+ETAP 1
+- modele: Book, Reader, Loan
+- DTO
+- endpointy GET, GET po id, POST
+- relacja logiczna Book -> Loan <- Reader
+
+ETAP 2
+- serwisy i interfejsy
+- dependency injection
+- walidacja Data Annotations
+- PUT, DELETE
+- global error handling middleware
+- reguły biznesowe
+
+ETAP 3
+- EF Core + SQLite
+- paginacja
+- soft delete dla Book i Reader
+- pełny Swagger z XML comments
+- README
+
+5. REGUŁY BIZNESOWE
+- nie można wypożyczyć książki, jeśli brak egzemplarzy
+- czytelnik może mieć maksymalnie 3 aktywne wypożyczenia
+- czytelnik nie może wypożyczyć tej samej książki drugi raz, jeśli jej nie zwrócił
+- nie można usunąć książki lub czytelnika z aktywnymi wypożyczeniami
+- nie można usunąć aktywnego wypożyczenia bez wcześniejszego zwrotu
+
+6. DODATKI Z ETAPU 3
+- paginacja
+- soft delete
+
+
+==========================================================================================
+PLIK: OPIS_DO_ODDANIA.txt
+==========================================================================================
+
+OPIS PROJEKTU DO ODDANIA
+
+Nazwa domeny:
+System biblioteczny
+
+Opis projektu:
+Projekt został wykonany w technologii ASP.NET Core Web API jako aplikacja backendowa dla systemu bibliotecznego.
+Projekt obejmuje pełną realizację etapów 1, 2 i 3.
+
+Etap 1:
+Zaimplementowano modele domenowe Book, Reader oraz Loan, które reprezentują odpowiednio książkę, czytelnika i wypożyczenie.
+Dodano DTO oraz podstawowe endpointy REST typu GET, GET po identyfikatorze oraz POST.
+Na tym etapie została zdefiniowana relacja logiczna pomiędzy encją główną i użytkownikiem systemu.
+
+Etap 2:
+Kod został zrefaktoryzowany do warstwy usług (Services), a kontrolery odpowiadają wyłącznie za obsługę żądań HTTP.
+Zastosowano Dependency Injection, walidację danych wejściowych przy użyciu Data Annotations, endpointy PUT i DELETE oraz globalne obsługiwanie błędów przy pomocy middleware.
+W systemie zaimplementowano reguły biznesowe związane z wypożyczeniami.
+
+Etap 3:
+Dane zostały przeniesione z pamięci aplikacji do SQLite przy pomocy Entity Framework Core.
+Dodano paginację wyników oraz soft delete dla książek i czytelników.
+Swagger został rozszerzony o opisy XML, a do projektu dołączono instrukcję uruchomienia w pliku README.
+Dodatkowo utworzono prosty i przejrzysty widok strony startowej w języku polskim, prezentujący dane z systemu.

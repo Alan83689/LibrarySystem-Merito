@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>System biblioteczny</title>
+    <link rel="stylesheet" href="/css/site.css" />
+</head>
+<body>
+<header class="hero">
+    <div class="container hero-inner">
+        <div class="brand-block">
+            <img src="/images/logo-merito.png" alt="Uniwersytety WSB Merito" class="brand-logo" />
+            <div>
+                <span class="badge">Projekt zaliczeniowy ASP.NET Core Web API</span>
+                <h1>System biblioteczny</h1>
+                <p>Finalna wersja projektu obejmująca etapy 1, 2 i 3.</p>
+            </div>
+        </div>
+        <div class="hero-actions">
+            <a class="button" href="/swagger" target="_blank">Otwórz Swagger</a>
+        </div>
+    </div>
+</header>
+
+<main class="container">
+    <section class="summary-grid">
+        <div class="card stat">
+            <h2>Książki</h2>
+            <div id="booksCount" class="value">-</div>
+        </div>
+        <div class="card stat">
+            <h2>Czytelnicy</h2>
+            <div id="readersCount" class="value">-</div>
+        </div>
+        <div class="card stat">
+            <h2>Wypożyczenia</h2>
+            <div id="loansCount" class="value">-</div>
+        </div>
+    </section>
+
+    <section class="controls card">
+        <div class="filters">
+            <input id="searchInput" type="text" placeholder="Szukaj po tytule lub autorze..." />
+            <button id="searchButton" class="button">Szukaj</button>
+            <button id="resetButton" class="button secondary">Reset</button>
+        </div>
+    </section>
+
+    <section class="grid-two">
+        <section class="card">
+            <div class="section-header">
+                <h2>Książki</h2>
+                <button id="refreshBooks" class="button small">Odśwież</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Tytuł</th>
+                        <th>Autor</th>
+                        <th>Dostępne</th>
+                    </tr>
+                </thead>
+                <tbody id="booksTable"></tbody>
+            </table>
+        </section>
+
+        <section class="card">
+            <div class="section-header">
+                <h2>Czytelnicy</h2>
+                <button id="refreshReaders" class="button small">Odśwież</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Imię i nazwisko</th>
+                        <th>Karta</th>
+                    </tr>
+                </thead>
+                <tbody id="readersTable"></tbody>
+            </table>
+        </section>
+    </section>
+
+    <section class="card">
+        <div class="section-header">
+            <h2>Wypożyczenia</h2>
+            <button id="refreshLoans" class="button small">Odśwież</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Książka</th>
+                    <th>Czytelnik</th>
+                    <th>Data wypożyczenia</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="loansTable"></tbody>
+        </table>
+    </section>
+
+    <section class="card info">
+        <h2>Zakres projektu</h2>
+        <ul>
+            <li><strong>Etap 1:</strong> modele, DTO, endpointy GET/POST oraz relacja Book-Reader-Loan.</li>
+            <li><strong>Etap 2:</strong> Services, Dependency Injection, walidacja, PUT/DELETE i middleware błędów.</li>
+            <li><strong>Etap 3:</strong> EF Core + SQLite, paginacja, soft delete, Swagger XML oraz README.</li>
+        </ul>
+    </section>
+</main>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
